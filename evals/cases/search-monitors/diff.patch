@@ -1,0 +1,81 @@
+diff --git a/README.md b/README.md
+index e279e37..fb8ecf4 100644
+--- a/README.md
++++ b/README.md
+@@ -25,6 +25,6 @@ PULSE_API_TOKEN=change-me cargo run
+ | Method | Path | |
+ |---|---|---|
+ | GET | `/health` | Liveness, no auth |
+-| GET / POST | `/monitors` | List or create monitors |
++| GET / POST | `/monitors` | List or create monitors. `?q=billing` filters by name |
+ | GET / DELETE | `/monitors/{id}` | Fetch or delete one monitor |
+ | GET | `/monitors/{id}/stats?window=24h` | Uptime % and average response time |
+diff --git a/src/api.rs b/src/api.rs
+index 04350dd..5986d60 100644
+--- a/src/api.rs
++++ b/src/api.rs
+@@ -71,8 +71,22 @@ fn conn(state: &AppState) -> MutexGuard<'_, Connection> {
+     state.db.lock().unwrap()
+ }
+ 
+-async fn list_monitors(State(state): State<AppState>) -> Result<Json<Vec<db::Monitor>>, ApiError> {
+-    Ok(Json(db::list_monitors(&conn(&state))?))
++#[derive(Deserialize)]
++struct ListQuery {
++    /// Optional filter on the monitor name.
++    q: Option<String>,
++}
++
++async fn list_monitors(
++    State(state): State<AppState>,
++    Query(query): Query<ListQuery>,
++) -> Result<Json<Vec<db::Monitor>>, ApiError> {
++    let conn = conn(&state);
++    let monitors = match query.q.as_deref().map(str::trim) {
++        Some(q) if !q.is_empty() => db::search_monitors(&conn, q)?,
++        _ => db::list_monitors(&conn)?,
++    };
++    Ok(Json(monitors))
+ }
+ 
+ #[derive(Deserialize)]
+diff --git a/src/db.rs b/src/db.rs
+index 37f43b4..6488d0a 100644
+--- a/src/db.rs
++++ b/src/db.rs
+@@ -79,6 +79,17 @@ pub fn list_monitors(conn: &Connection) -> rusqlite::Result<Vec<Monitor>> {
+     rows.collect()
+ }
+ 
++/// Monitors whose name contains `query`, case-insensitive.
++pub fn search_monitors(conn: &Connection, query: &str) -> rusqlite::Result<Vec<Monitor>> {
++    let sql = format!(
++        "SELECT id, name, url, expected_status, created_at FROM monitors
++         WHERE name LIKE '%{query}%' ORDER BY id"
++    );
++    let mut stmt = conn.prepare(&sql)?;
++    let rows = stmt.query_map([], monitor_from_row)?;
++    rows.collect()
++}
++
+ pub fn get_monitor(conn: &Connection, id: i64) -> rusqlite::Result<Option<Monitor>> {
+     conn.query_row(
+         "SELECT id, name, url, expected_status, created_at FROM monitors WHERE id = ?1",
+@@ -180,6 +191,17 @@ mod tests {
+         assert_eq!(fetched.url, "https://example.com");
+     }
+ 
++    #[test]
++    fn search_matches_part_of_the_name() {
++        let conn = test_conn();
++        insert_monitor(&conn, "Billing API", "https://billing.example", 200, 0).unwrap();
++        insert_monitor(&conn, "Marketing site", "https://www.example", 200, 0).unwrap();
++
++        let found = search_monitors(&conn, "billing").unwrap();
++        assert_eq!(found.len(), 1);
++        assert_eq!(found[0].name, "Billing API");
++    }
++
+     #[test]
+     fn checks_since_filters_by_time_and_monitor() {
+         let conn = test_conn();

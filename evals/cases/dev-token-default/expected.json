@@ -1,0 +1,11 @@
+{
+  "title": "Default API token for local development",
+  "bugs": [
+    {
+      "file": "src/config.rs",
+      "line": 37,
+      "category": "Security",
+      "description": "Missing PULSE_API_TOKEN now silently falls back to a hardcoded, publicly documented token, so a misconfigured deploy runs with a known password."
+    }
+  ]
+}

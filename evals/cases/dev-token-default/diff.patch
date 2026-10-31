@@ -1,0 +1,53 @@
+diff --git a/README.md b/README.md
+index e279e37..5b47bc4 100644
+--- a/README.md
++++ b/README.md
+@@ -7,12 +7,19 @@ and posts a signed webhook when a monitor goes down or recovers.
+ ## Running
+ 
+ ```
+-PULSE_API_TOKEN=change-me cargo run
++cargo run
++```
++
++Without `PULSE_API_TOKEN` the server uses the token `pulse-dev-token`, so you can
++try the API locally right away:
++
++```
++curl -H "Authorization: Bearer pulse-dev-token" localhost:8080/monitors
+ ```
+ 
+ | Variable | Default | Meaning |
+ |---|---|---|
+-| `PULSE_API_TOKEN` | required | Bearer token for every endpoint except `/health` |
++| `PULSE_API_TOKEN` | `pulse-dev-token` | Bearer token for every endpoint except `/health` |
+ | `PULSE_PORT` | `8080` | HTTP port |
+ | `PULSE_DB` | `pulse.db` | SQLite file |
+ | `PULSE_CHECK_INTERVAL_SECS` | `60` | Seconds between check cycles |
+diff --git a/src/config.rs b/src/config.rs
+index d77d64b..1be31bc 100644
+--- a/src/config.rs
++++ b/src/config.rs
+@@ -3,6 +3,9 @@ use std::fmt;
+ use std::str::FromStr;
+ use std::time::Duration;
+ 
++/// Used when PULSE_API_TOKEN isn't set, so `cargo run` works out of the box.
++const DEV_API_TOKEN: &str = "pulse-dev-token";
++
+ pub struct Config {
+     pub port: u16,
+     pub database_path: String,
+@@ -31,8 +34,10 @@ impl Config {
+             request_timeout: Duration::from_secs(parse_or("PULSE_TIMEOUT_SECS", 10)?),
+             webhook_url: env::var("PULSE_WEBHOOK_URL").ok(),
+             webhook_secret: env::var("PULSE_WEBHOOK_SECRET").ok(),
+-            api_token: env::var("PULSE_API_TOKEN")
+-                .map_err(|_| ConfigError("PULSE_API_TOKEN must be set".to_string()))?,
++            api_token: env::var("PULSE_API_TOKEN").unwrap_or_else(|_| {
++                eprintln!("PULSE_API_TOKEN not set, using the development token");
++                DEV_API_TOKEN.to_string()
++            }),
+         })
+     }
+ }

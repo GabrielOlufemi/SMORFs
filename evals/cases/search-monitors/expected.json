@@ -1,0 +1,11 @@
+{
+  "title": "Add name search to the monitor list",
+  "bugs": [
+    {
+      "file": "src/db.rs",
+      "line": 86,
+      "category": "Security",
+      "description": "User-supplied search text is formatted straight into the SQL string: SQL injection. Should be a bound parameter."
+    }
+  ]
+}

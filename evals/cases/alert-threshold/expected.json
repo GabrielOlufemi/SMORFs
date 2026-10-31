@@ -1,0 +1,11 @@
+{
+  "title": "Only alert after several failed checks in a row",
+  "bugs": [
+    {
+      "file": "src/alerts.rs",
+      "line": 43,
+      "category": "Correctness",
+      "description": "Uses '< threshold' to suppress, so every failing check after the threshold sends another 'down' alert instead of only the one that reaches it."
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+diff --git a/src/alerts.rs b/src/alerts.rs
+index 6e2700e..1fc9b40 100644
+--- a/src/alerts.rs
++++ b/src/alerts.rs
+@@ -41,6 +41,11 @@ pub fn transition(monitor: &Monitor, previous: Option<&Check>, current: &Check)
+     })
+ }
+ 
++/// Value of the `x-pulse-signature` header for `body`.
++pub fn signature_header(secret: &str, body: &[u8]) -> String {
++    format!("sha256={}", sign(secret, body))
++}
++
+ /// Hex-encoded HMAC-SHA256 of `body`, so receivers can verify the alert came from us.
+ pub fn sign(secret: &str, body: &[u8]) -> String {
+     let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes()).expect("HMAC accepts any key length");
+@@ -56,7 +61,7 @@ pub async fn send(client: &reqwest::Client, config: &Config, alert: &Alert) {
+ 
+     let mut request = client.post(url).header("content-type", "application/json");
+     if let Some(secret) = &config.webhook_secret {
+-        request = request.header("x-pulse-signature", format!("sha256={}", sign(secret, &body)));
++        request = request.header("x-pulse-signature", signature_header(secret, &body));
+     }
+     if let Err(err) = request.body(body).send().await {
+         eprintln!("failed to deliver alert for {}: {err}", alert.monitor_name);
+@@ -121,4 +126,20 @@ mod tests {
+         assert_ne!(base, sign("other", b"{\"kind\":\"down\"}"));
+         assert_ne!(base, sign("secret", b"{\"kind\":\"recovered\"}"));
+     }
++
++    #[test]
++    fn signature_header_has_prefix() {
++        let header = signature_header("secret", b"{}");
++        assert!(header.starts_with("sha256="));
++        assert_eq!(header.len(), "sha256=".len() + 64);
++    }
++
++    #[test]
++    fn signature_header_changes_when_body_is_tampered() {
++        let original = br#"{"kind":"down","monitor_id":1}"#;
++        let tampered = br#"{"kind":"down","monitor_id":2}"#;
++        let header = signature_header("secret", original);
++        assert!(header.starts_with("sha256="));
++        assert_eq!(signature_header("secret", tampered), signature_header("secret", tampered));
++    }
+ }

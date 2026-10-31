@@ -1,0 +1,11 @@
+{
+  "title": "Report p95 response time in monitor stats",
+  "bugs": [
+    {
+      "file": "src/stats.rs",
+      "line": 43,
+      "category": "Tests",
+      "description": "New p95 / percentile logic has no tests at all (single value, rank rounding, empty input path)."
+    }
+  ]
+}

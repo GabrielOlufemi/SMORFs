@@ -1,0 +1,11 @@
+{
+  "title": "Add /overview endpoint for the dashboard",
+  "bugs": [
+    {
+      "file": "src/api.rs",
+      "line": 133,
+      "category": "Performance",
+      "description": "Loads every check ever recorded for each monitor and filters to 24h in Rust, while holding the DB lock. Should query with checks_since."
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+diff --git a/src/checker.rs b/src/checker.rs
+index 8055beb..9dbefa8 100644
+--- a/src/checker.rs
++++ b/src/checker.rs
+@@ -9,8 +9,21 @@ pub fn build_client(timeout: Duration) -> reqwest::Client {
+         .expect("failed to build HTTP client")
+ }
+ 
+-/// Requests the monitor's URL once and records how it went.
++/// How long to wait before retrying a failed check.
++const RETRY_DELAY: Duration = Duration::from_secs(2);
++
++/// Requests the monitor's URL, retrying once on failure so a single dropped
++/// connection doesn't count as downtime.
+ pub async fn check(client: &reqwest::Client, monitor: &Monitor, now: i64) -> Check {
++    let first = attempt(client, monitor, now).await;
++    if first.up {
++        return first;
++    }
++    std::thread::sleep(RETRY_DELAY);
++    attempt(client, monitor, now).await
++}
++
++async fn attempt(client: &reqwest::Client, monitor: &Monitor, now: i64) -> Check {
+     let started = Instant::now();
+     match client.get(&monitor.url).send().await {
+         Ok(response) => {

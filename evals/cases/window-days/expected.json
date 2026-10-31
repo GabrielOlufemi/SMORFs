@@ -1,0 +1,11 @@
+{
+  "title": "Support day windows in stats and cap the window at 30 days",
+  "bugs": [
+    {
+      "file": "src/stats.rs",
+      "line": 53,
+      "category": "Correctness",
+      "description": "A day is 24 * 60 * 60 seconds, but 'd' multiplies by 24 * 60, so '7d' becomes about 2.8 hours."
+    }
+  ]
+}

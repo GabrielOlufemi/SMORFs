@@ -1,0 +1,11 @@
+{
+  "title": "Extract signature_header and test it",
+  "bugs": [
+    {
+      "file": "src/alerts.rs",
+      "line": 143,
+      "category": "Tests",
+      "description": "The tamper test compares the tampered signature with itself, so it can never fail. It should assert the original header != the tampered one."
+    }
+  ]
+}

@@ -1,0 +1,211 @@
+diff --git a/README.md b/README.md
+index e279e37..8fee6cf 100644
+--- a/README.md
++++ b/README.md
+@@ -19,6 +19,7 @@ PULSE_API_TOKEN=change-me cargo run
+ | `PULSE_TIMEOUT_SECS` | `10` | Per-request timeout |
+ | `PULSE_WEBHOOK_URL` | unset | Where alerts are posted |
+ | `PULSE_WEBHOOK_SECRET` | unset | Signs alerts (`x-pulse-signature: sha256=<hex>`) |
++| `PULSE_FAILURE_THRESHOLD` | `3` | Failed checks in a row before a monitor is reported down |
+ 
+ ## API
+ 
+diff --git a/src/alerts.rs b/src/alerts.rs
+index 6e2700e..98b181a 100644
+--- a/src/alerts.rs
++++ b/src/alerts.rs
+@@ -22,14 +22,28 @@ pub struct Alert {
+     pub error: Option<String>,
+ }
+ 
+-/// Returns an alert when a check flips the monitor between up and down.
+-/// A monitor with no previous check is treated as up.
+-pub fn transition(monitor: &Monitor, previous: Option<&Check>, current: &Check) -> Option<Alert> {
+-    let was_up = previous.map(|c| c.up).unwrap_or(true);
+-    let kind = match (was_up, current.up) {
+-        (true, false) => AlertKind::Down,
+-        (false, true) => AlertKind::Recovered,
+-        _ => return None,
++/// Number of failed checks at the start of `checks` (newest first) before the first success.
++fn consecutive_failures(checks: &[Check]) -> usize {
++    checks.iter().take_while(|c| !c.up).count()
++}
++
++/// Decides whether the newest check should raise an alert.
++///
++/// `recent` is newest first and starts with the check that was just stored. A monitor is
++/// only reported down after `threshold` failures in a row, so a single slow response
++/// doesn't page anyone, and a recovery is only reported if the outage was.
++pub fn evaluate(monitor: &Monitor, recent: &[Check], threshold: usize) -> Option<Alert> {
++    let current = recent.first()?;
++    let kind = if current.up {
++        if consecutive_failures(&recent[1..]) < threshold {
++            return None;
++        }
++        AlertKind::Recovered
++    } else {
++        if consecutive_failures(recent) < threshold {
++            return None;
++        }
++        AlertKind::Down
+     };
+     Some(Alert {
+         monitor_id: monitor.id,
+@@ -88,29 +102,49 @@ mod tests {
+         }
+     }
+ 
++    /// Builds a newest-first history from oldest-first states, one check per second.
++    fn history(states: &[bool]) -> Vec<Check> {
++        let mut checks: Vec<Check> = states
++            .iter()
++            .enumerate()
++            .map(|(i, &up)| check(up, i as i64))
++            .collect();
++        checks.reverse();
++        checks
++    }
++
++    #[test]
++    fn alerts_when_failures_reach_threshold() {
++        let alert = evaluate(&monitor(), &history(&[true, false, false, false]), 3).unwrap();
++        assert_eq!(alert.kind, AlertKind::Down);
++        assert_eq!(alert.at, 3);
++    }
++
+     #[test]
+-    fn alerts_when_monitor_goes_down() {
+-        let alert = transition(&monitor(), Some(&check(true, 1)), &check(false, 2)).unwrap();
++    fn no_alert_below_threshold() {
++        assert!(evaluate(&monitor(), &history(&[true, false, false]), 3).is_none());
++    }
++
++    #[test]
++    fn single_failure_is_enough_with_threshold_one() {
++        let alert = evaluate(&monitor(), &history(&[true, false]), 1).unwrap();
+         assert_eq!(alert.kind, AlertKind::Down);
+-        assert_eq!(alert.at, 2);
+     }
+ 
+     #[test]
+-    fn alerts_when_monitor_recovers() {
+-        let alert = transition(&monitor(), Some(&check(false, 1)), &check(true, 2)).unwrap();
++    fn alerts_when_monitor_recovers_after_outage() {
++        let alert = evaluate(&monitor(), &history(&[false, false, false, true]), 3).unwrap();
+         assert_eq!(alert.kind, AlertKind::Recovered);
+     }
+ 
+     #[test]
+-    fn no_alert_while_state_is_unchanged() {
+-        assert!(transition(&monitor(), Some(&check(false, 1)), &check(false, 2)).is_none());
+-        assert!(transition(&monitor(), Some(&check(true, 1)), &check(true, 2)).is_none());
++    fn no_recovery_alert_for_short_blip() {
++        assert!(evaluate(&monitor(), &history(&[true, false, true]), 3).is_none());
+     }
+ 
+     #[test]
+-    fn first_check_down_alerts() {
+-        let alert = transition(&monitor(), None, &check(false, 1)).unwrap();
+-        assert_eq!(alert.kind, AlertKind::Down);
++    fn no_alert_while_up() {
++        assert!(evaluate(&monitor(), &history(&[true, true]), 3).is_none());
+     }
+ 
+     #[test]
+diff --git a/src/config.rs b/src/config.rs
+index d77d64b..d25d900 100644
+--- a/src/config.rs
++++ b/src/config.rs
+@@ -11,6 +11,8 @@ pub struct Config {
+     pub webhook_url: Option<String>,
+     pub webhook_secret: Option<String>,
+     pub api_token: String,
++    /// Failed checks in a row before a monitor is reported down.
++    pub failure_threshold: usize,
+ }
+ 
+ #[derive(Debug)]
+@@ -33,6 +35,10 @@ impl Config {
+             webhook_secret: env::var("PULSE_WEBHOOK_SECRET").ok(),
+             api_token: env::var("PULSE_API_TOKEN")
+                 .map_err(|_| ConfigError("PULSE_API_TOKEN must be set".to_string()))?,
++            failure_threshold: match parse_or("PULSE_FAILURE_THRESHOLD", 3)? {
++                0 => return Err(ConfigError("PULSE_FAILURE_THRESHOLD must be at least 1".to_string())),
++                n => n,
++            },
+         })
+     }
+ }
+diff --git a/src/db.rs b/src/db.rs
+index 37f43b4..d1a3e80 100644
+--- a/src/db.rs
++++ b/src/db.rs
+@@ -139,14 +139,14 @@ pub fn checks_since(conn: &Connection, monitor_id: i64, since: i64) -> rusqlite:
+     rows.collect()
+ }
+ 
+-pub fn last_check(conn: &Connection, monitor_id: i64) -> rusqlite::Result<Option<Check>> {
+-    conn.query_row(
++/// The newest `limit` checks for one monitor, newest first.
++pub fn recent_checks(conn: &Connection, monitor_id: i64, limit: usize) -> rusqlite::Result<Vec<Check>> {
++    let mut stmt = conn.prepare(
+         "SELECT monitor_id, checked_at, status_code, response_ms, up, error
+-         FROM checks WHERE monitor_id = ?1 ORDER BY checked_at DESC LIMIT 1",
+-        params![monitor_id],
+-        check_from_row,
+-    )
+-    .optional()
++         FROM checks WHERE monitor_id = ?1 ORDER BY checked_at DESC LIMIT ?2",
++    )?;
++    let rows = stmt.query_map(params![monitor_id, limit as i64], check_from_row)?;
++    rows.collect()
+ }
+ 
+ #[cfg(test)]
+@@ -195,15 +195,16 @@ mod tests {
+     }
+ 
+     #[test]
+-    fn last_check_returns_newest() {
++    fn recent_checks_are_newest_first_and_limited() {
+         let conn = test_conn();
+         let m = insert_monitor(&conn, "m", "https://m.example", 200, 0).unwrap();
+-        insert_check(&conn, &check_at(m.id, 100, true)).unwrap();
+-        insert_check(&conn, &check_at(m.id, 200, false)).unwrap();
++        for at in [100, 200, 300] {
++            insert_check(&conn, &check_at(m.id, at, true)).unwrap();
++        }
+ 
+-        let last = last_check(&conn, m.id).unwrap().unwrap();
+-        assert_eq!(last.checked_at, 200);
+-        assert!(!last.up);
++        let recent = recent_checks(&conn, m.id, 2).unwrap();
++        let times: Vec<i64> = recent.iter().map(|c| c.checked_at).collect();
++        assert_eq!(times, vec![300, 200]);
+     }
+ 
+     #[test]
+diff --git a/src/scheduler.rs b/src/scheduler.rs
+index 85bcf50..955426c 100644
+--- a/src/scheduler.rs
++++ b/src/scheduler.rs
+@@ -41,14 +41,15 @@ async fn run_once(state: &AppState, client: &reqwest::Client) -> rusqlite::Resul
+             }
+         };
+ 
+-        let previous = {
++        // One extra check beyond the threshold tells us whether the streak just started.
++        let threshold = state.config.failure_threshold;
++        let recent = {
+             let conn = state.db.lock().unwrap();
+-            let previous = db::last_check(&conn, monitor.id)?;
+             db::insert_check(&conn, &check)?;
+-            previous
++            db::recent_checks(&conn, monitor.id, threshold + 1)?
+         };
+ 
+-        if let Some(alert) = alerts::transition(&monitor, previous.as_ref(), &check) {
++        if let Some(alert) = alerts::evaluate(&monitor, &recent, threshold) {
+             alerts::send(client, &state.config, &alert).await;
+         }
+     }

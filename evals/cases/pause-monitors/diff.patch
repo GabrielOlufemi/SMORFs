@@ -1,0 +1,145 @@
+diff --git a/README.md b/README.md
+index e279e37..49d4ed5 100644
+--- a/README.md
++++ b/README.md
+@@ -27,4 +27,5 @@ PULSE_API_TOKEN=change-me cargo run
+ | GET | `/health` | Liveness, no auth |
+ | GET / POST | `/monitors` | List or create monitors |
+ | GET / DELETE | `/monitors/{id}` | Fetch or delete one monitor |
++| POST | `/monitors/{id}/pause`, `/monitors/{id}/resume` | Stop or restart checking a monitor |
+ | GET | `/monitors/{id}/stats?window=24h` | Uptime % and average response time |
+diff --git a/src/api.rs b/src/api.rs
+index 04350dd..00377e0 100644
+--- a/src/api.rs
++++ b/src/api.rs
+@@ -4,7 +4,7 @@ use axum::extract::{Path, Query, Request, State};
+ use axum::http::{header, StatusCode};
+ use axum::middleware::{self, Next};
+ use axum::response::{IntoResponse, Response};
+-use axum::routing::get;
++use axum::routing::{get, post};
+ use axum::{Json, Router};
+ use rusqlite::Connection;
+ use serde::{Deserialize, Serialize};
+@@ -19,6 +19,8 @@ pub fn router(state: AppState) -> Router {
+         .route("/monitors", get(list_monitors).post(create_monitor))
+         .route("/monitors/{id}", get(get_monitor).delete(delete_monitor))
+         .route("/monitors/{id}/stats", get(monitor_stats))
++        .route("/monitors/{id}/pause", post(pause_monitor))
++        .route("/monitors/{id}/resume", post(resume_monitor))
+         .route_layer(middleware::from_fn_with_state(state.clone(), require_token));
+ 
+     Router::new()
+@@ -113,6 +115,24 @@ async fn delete_monitor(State(state): State<AppState>, Path(id): Path<i64>) -> R
+     }
+ }
+ 
++async fn pause_monitor(State(state): State<AppState>, Path(id): Path<i64>) -> Result<StatusCode, ApiError> {
++    let conn = conn(&state);
++    if db::get_monitor(&conn, id)?.is_none() {
++        return Err(ApiError::NotFound);
++    }
++    db::pause_monitor(&conn, id)?;
++    Ok(StatusCode::NO_CONTENT)
++}
++
++async fn resume_monitor(State(state): State<AppState>, Path(id): Path<i64>) -> Result<StatusCode, ApiError> {
++    let conn = conn(&state);
++    if db::get_monitor(&conn, id)?.is_none() {
++        return Err(ApiError::NotFound);
++    }
++    db::resume_monitor(&conn, id)?;
++    Ok(StatusCode::NO_CONTENT)
++}
++
+ #[derive(Deserialize)]
+ struct StatsQuery {
+     window: Option<String>,
+diff --git a/src/db.rs b/src/db.rs
+index 37f43b4..6f19649 100644
+--- a/src/db.rs
++++ b/src/db.rs
+@@ -46,7 +46,10 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
+             up INTEGER NOT NULL,
+             error TEXT
+         );
+-        CREATE INDEX IF NOT EXISTS idx_checks_monitor_time ON checks(monitor_id, checked_at);",
++        CREATE INDEX IF NOT EXISTS idx_checks_monitor_time ON checks(monitor_id, checked_at);
++        CREATE TABLE IF NOT EXISTS paused_monitors (
++            monitor_id INTEGER PRIMARY KEY REFERENCES monitors(id) ON DELETE CASCADE
++        );",
+     )
+ }
+ 
+@@ -79,6 +82,37 @@ pub fn list_monitors(conn: &Connection) -> rusqlite::Result<Vec<Monitor>> {
+     rows.collect()
+ }
+ 
++/// Monitors that haven't been paused; these are the ones the scheduler checks.
++pub fn list_active_monitors(conn: &Connection) -> rusqlite::Result<Vec<Monitor>> {
++    let mut stmt = conn.prepare(
++        "SELECT id, name, url, expected_status, created_at FROM monitors
++         WHERE id NOT IN (SELECT monitor_id FROM paused_monitors) ORDER BY id",
++    )?;
++    let rows = stmt.query_map([], |row| {
++        Ok(Monitor {
++            id: row.get(0)?,
++            name: row.get(1)?,
++            url: row.get(2)?,
++            expected_status: row.get(3)?,
++            created_at: row.get(4)?,
++        })
++    })?;
++    rows.collect()
++}
++
++pub fn pause_monitor(conn: &Connection, id: i64) -> rusqlite::Result<()> {
++    conn.execute(
++        "INSERT OR IGNORE INTO paused_monitors (monitor_id) VALUES (?1)",
++        params![id],
++    )?;
++    Ok(())
++}
++
++pub fn resume_monitor(conn: &Connection, id: i64) -> rusqlite::Result<()> {
++    conn.execute("DELETE FROM paused_monitors WHERE monitor_id = ?1", params![id])?;
++    Ok(())
++}
++
+ pub fn get_monitor(conn: &Connection, id: i64) -> rusqlite::Result<Option<Monitor>> {
+     conn.query_row(
+         "SELECT id, name, url, expected_status, created_at FROM monitors WHERE id = ?1",
+@@ -180,6 +214,20 @@ mod tests {
+         assert_eq!(fetched.url, "https://example.com");
+     }
+ 
++    #[test]
++    fn paused_monitors_are_not_active() {
++        let conn = test_conn();
++        let a = insert_monitor(&conn, "a", "https://a.example", 200, 0).unwrap();
++        let b = insert_monitor(&conn, "b", "https://b.example", 200, 0).unwrap();
++
++        pause_monitor(&conn, a.id).unwrap();
++        let active: Vec<i64> = list_active_monitors(&conn).unwrap().iter().map(|m| m.id).collect();
++        assert_eq!(active, vec![b.id]);
++
++        resume_monitor(&conn, a.id).unwrap();
++        assert_eq!(list_active_monitors(&conn).unwrap().len(), 2);
++    }
++
+     #[test]
+     fn checks_since_filters_by_time_and_monitor() {
+         let conn = test_conn();
+diff --git a/src/scheduler.rs b/src/scheduler.rs
+index 85bcf50..bba4d20 100644
+--- a/src/scheduler.rs
++++ b/src/scheduler.rs
+@@ -19,7 +19,7 @@ pub async fn run(state: AppState) {
+ async fn run_once(state: &AppState, client: &reqwest::Client) -> rusqlite::Result<()> {
+     let monitors = {
+         let conn = state.db.lock().unwrap();
+-        db::list_monitors(&conn)?
++        db::list_active_monitors(&conn)?
+     };
+ 
+     let now = unix_now();

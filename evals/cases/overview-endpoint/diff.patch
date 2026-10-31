@@ -1,0 +1,83 @@
+diff --git a/README.md b/README.md
+index e279e37..63096fe 100644
+--- a/README.md
++++ b/README.md
+@@ -25,6 +25,7 @@ PULSE_API_TOKEN=change-me cargo run
+ | Method | Path | |
+ |---|---|---|
+ | GET | `/health` | Liveness, no auth |
++| GET | `/overview` | Every monitor with its last-24h stats |
+ | GET / POST | `/monitors` | List or create monitors |
+ | GET / DELETE | `/monitors/{id}` | Fetch or delete one monitor |
+ | GET | `/monitors/{id}/stats?window=24h` | Uptime % and average response time |
+diff --git a/src/api.rs b/src/api.rs
+index 04350dd..9f4c05e 100644
+--- a/src/api.rs
++++ b/src/api.rs
+@@ -13,9 +13,11 @@ use crate::scheduler::unix_now;
+ use crate::{db, stats, AppState};
+ 
+ const DEFAULT_WINDOW: &str = "24h";
++const DAY_SECS: i64 = 24 * 60 * 60;
+ 
+ pub fn router(state: AppState) -> Router {
+     let protected = Router::new()
++        .route("/overview", get(overview))
+         .route("/monitors", get(list_monitors).post(create_monitor))
+         .route("/monitors/{id}", get(get_monitor).delete(delete_monitor))
+         .route("/monitors/{id}/stats", get(monitor_stats))
+@@ -113,6 +115,33 @@ async fn delete_monitor(State(state): State<AppState>, Path(id): Path<i64>) -> R
+     }
+ }
+ 
++#[derive(Serialize)]
++struct MonitorOverview {
++    #[serde(flatten)]
++    monitor: db::Monitor,
++    #[serde(flatten)]
++    stats: stats::Stats,
++}
++
++/// Every monitor with its last-24h stats, for the dashboard's front page.
++async fn overview(State(state): State<AppState>) -> Result<Json<Vec<MonitorOverview>>, ApiError> {
++    let conn = conn(&state);
++    let since = unix_now() - DAY_SECS;
++
++    let mut overview = Vec::new();
++    for monitor in db::list_monitors(&conn)? {
++        let checks: Vec<db::Check> = db::all_checks(&conn, monitor.id)?
++            .into_iter()
++            .filter(|check| check.checked_at >= since)
++            .collect();
++        overview.push(MonitorOverview {
++            monitor,
++            stats: stats::compute(&checks),
++        });
++    }
++    Ok(Json(overview))
++}
++
+ #[derive(Deserialize)]
+ struct StatsQuery {
+     window: Option<String>,
+diff --git a/src/db.rs b/src/db.rs
+index 37f43b4..93c5f0e 100644
+--- a/src/db.rs
++++ b/src/db.rs
+@@ -129,6 +129,16 @@ pub fn insert_check(conn: &Connection, check: &Check) -> rusqlite::Result<()> {
+     Ok(())
+ }
+ 
++/// Every check ever recorded for one monitor, oldest first.
++pub fn all_checks(conn: &Connection, monitor_id: i64) -> rusqlite::Result<Vec<Check>> {
++    let mut stmt = conn.prepare(
++        "SELECT monitor_id, checked_at, status_code, response_ms, up, error
++         FROM checks WHERE monitor_id = ?1 ORDER BY checked_at",
++    )?;
++    let rows = stmt.query_map(params![monitor_id], check_from_row)?;
++    rows.collect()
++}
++
+ /// Checks for one monitor at or after `since`, oldest first.
+ pub fn checks_since(conn: &Connection, monitor_id: i64, since: i64) -> rusqlite::Result<Vec<Check>> {
+     let mut stmt = conn.prepare(

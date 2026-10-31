@@ -1,0 +1,17 @@
+{
+  "title": "Pause and resume monitors",
+  "bugs": [
+    {
+      "file": "src/db.rs",
+      "line": 91,
+      "category": "Style",
+      "description": "list_active_monitors re-implements the row-to-Monitor mapping inline instead of reusing monitor_from_row."
+    },
+    {
+      "file": "src/api.rs",
+      "line": 127,
+      "category": "Style",
+      "description": "resume_monitor is a copy-paste of pause_monitor except for one call; could share a helper."
+    }
+  ]
+}

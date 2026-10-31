@@ -1,0 +1,11 @@
+{
+  "title": "Retry failed checks once before recording downtime",
+  "bugs": [
+    {
+      "file": "src/checker.rs",
+      "line": 22,
+      "category": "Performance",
+      "description": "Blocking std::thread::sleep inside an async fn stalls a tokio worker thread for 2s per failing monitor. Should be tokio::time::sleep(...).await."
+    }
+  ]
+}

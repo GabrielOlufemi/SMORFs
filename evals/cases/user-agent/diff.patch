@@ -1,0 +1,63 @@
+diff --git a/README.md b/README.md
+index e279e37..65b97fd 100644
+--- a/README.md
++++ b/README.md
+@@ -17,6 +17,7 @@ PULSE_API_TOKEN=change-me cargo run
+ | `PULSE_DB` | `pulse.db` | SQLite file |
+ | `PULSE_CHECK_INTERVAL_SECS` | `60` | Seconds between check cycles |
+ | `PULSE_TIMEOUT_SECS` | `10` | Per-request timeout |
++| `PULSE_USER_AGENT` | `pulse/<version> (uptime monitor)` | `User-Agent` sent with every check |
+ | `PULSE_WEBHOOK_URL` | unset | Where alerts are posted |
+ | `PULSE_WEBHOOK_SECRET` | unset | Signs alerts (`x-pulse-signature: sha256=<hex>`) |
+ 
+diff --git a/src/checker.rs b/src/checker.rs
+index 8055beb..9e83211 100644
+--- a/src/checker.rs
++++ b/src/checker.rs
+@@ -2,9 +2,10 @@ use std::time::{Duration, Instant};
+ 
+ use crate::db::{Check, Monitor};
+ 
+-pub fn build_client(timeout: Duration) -> reqwest::Client {
++pub fn build_client(timeout: Duration, user_agent: &str) -> reqwest::Client {
+     reqwest::Client::builder()
+         .timeout(timeout)
++        .user_agent(user_agent)
+         .build()
+         .expect("failed to build HTTP client")
+ }
+diff --git a/src/config.rs b/src/config.rs
+index d77d64b..b87674a 100644
+--- a/src/config.rs
++++ b/src/config.rs
+@@ -11,6 +11,8 @@ pub struct Config {
+     pub webhook_url: Option<String>,
+     pub webhook_secret: Option<String>,
+     pub api_token: String,
++    /// Sent with every check so site owners can tell our traffic apart.
++    pub user_agent: String,
+ }
+ 
+ #[derive(Debug)]
+@@ -33,6 +35,8 @@ impl Config {
+             webhook_secret: env::var("PULSE_WEBHOOK_SECRET").ok(),
+             api_token: env::var("PULSE_API_TOKEN")
+                 .map_err(|_| ConfigError("PULSE_API_TOKEN must be set".to_string()))?,
++            user_agent: env::var("PULSE_USER_AGENT")
++                .unwrap_or_else(|_| format!("pulse/{} (uptime monitor)", env!("CARGO_PKG_VERSION"))),
+         })
+     }
+ }
+diff --git a/src/scheduler.rs b/src/scheduler.rs
+index 85bcf50..db8c6c5 100644
+--- a/src/scheduler.rs
++++ b/src/scheduler.rs
+@@ -5,7 +5,7 @@ use tokio::task::JoinSet;
+ use crate::{alerts, checker, db, AppState};
+ 
+ pub async fn run(state: AppState) {
+-    let client = checker::build_client(state.config.request_timeout);
++    let client = checker::build_client(state.config.request_timeout, &state.config.user_agent);
+     let mut ticker = tokio::time::interval(state.config.check_interval);
+     loop {
+         ticker.tick().await;

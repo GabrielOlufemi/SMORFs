@@ -1,0 +1,52 @@
+diff --git a/README.md b/README.md
+index e279e37..5880fad 100644
+--- a/README.md
++++ b/README.md
+@@ -27,4 +27,4 @@ PULSE_API_TOKEN=change-me cargo run
+ | GET | `/health` | Liveness, no auth |
+ | GET / POST | `/monitors` | List or create monitors |
+ | GET / DELETE | `/monitors/{id}` | Fetch or delete one monitor |
+-| GET | `/monitors/{id}/stats?window=24h` | Uptime % and average response time |
++| GET | `/monitors/{id}/stats?window=24h` | Uptime % and average response time. `window` takes minutes, hours or days (`30m`, `24h`, `7d`), up to 30 days |
+diff --git a/src/stats.rs b/src/stats.rs
+index 859da42..f989998 100644
+--- a/src/stats.rs
++++ b/src/stats.rs
+@@ -33,7 +33,11 @@ pub fn compute(checks: &[Check]) -> Stats {
+     }
+ }
+ 
+-/// Parses a window such as "30m" or "24h" into seconds.
++/// Longest window the stats endpoint will scan, so one request can't read the whole history.
++pub const MAX_WINDOW_SECS: i64 = 30 * 24 * 60 * 60;
++
++/// Parses a window such as "30m", "24h" or "7d" into seconds.
++/// Windows longer than `MAX_WINDOW_SECS` are rejected.
+ pub fn parse_window(raw: &str) -> Option<i64> {
+     if !raw.is_ascii() || raw.len() < 2 {
+         return None;
+@@ -46,9 +50,12 @@ pub fn parse_window(raw: &str) -> Option<i64> {
+     let unit_secs = match unit {
+         "m" => 60,
+         "h" => 60 * 60,
++        "d" => 24 * 60,
+         _ => return None,
+     };
+-    amount.checked_mul(unit_secs)
++    amount
++        .checked_mul(unit_secs)
++        .filter(|&seconds| seconds <= MAX_WINDOW_SECS)
+ }
+ 
+ #[cfg(test)]
+@@ -100,4 +107,10 @@ mod tests {
+             assert_eq!(parse_window(raw), None, "{raw:?} should be rejected");
+         }
+     }
++
++    #[test]
++    fn rejects_windows_over_the_limit() {
++        assert_eq!(parse_window("721h"), None);
++        assert_eq!(parse_window("720h"), Some(MAX_WINDOW_SECS));
++    }
+ }
