@@ -36,6 +36,7 @@ pub struct Job {
 pub struct Run {
   pub schema_version: u32,
   pub id: String,
+  pub model: String,
   pub job: Job,
   pub prompt_version: String,
   pub findings: Vec<Finding>,
