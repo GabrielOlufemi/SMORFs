@@ -1,38 +1,34 @@
 use crate::junk::is_junk;
 
 pub fn diff_from_file(path: &str) -> Result<String, std::io::Error> {
-  
-  std::fs::read_to_string(path)
-  
+    std::fs::read_to_string(path)
 }
 
-fn split_by_file(diff: &str) -> Vec<String>{  
+fn split_by_file(diff: &str) -> Vec<String> {
+    let mut chunks: Vec<String> = Vec::new();
+    let mut current = String::new();
 
-  let mut chunks: Vec<String> = Vec::new();
-  let mut current = String::new();
-    
-  for line in diff.lines() {
-    if line.starts_with("diff --git ") && !current.is_empty() {
-      chunks.push(std::mem::take(&mut current));
+    for line in diff.lines() {
+        if line.starts_with("diff --git ") && !current.is_empty() {
+            chunks.push(std::mem::take(&mut current));
+        }
+        current.push_str(line);
+        current.push('\n');
     }
-    current.push_str(line);
-    current.push('\n');
-  }
 
-  if !current.is_empty () {
-    chunks.push(current);
-  }
+    if !current.is_empty() {
+        chunks.push(current);
+    }
 
-  chunks
-  
+    chunks
 }
 
 fn extract_path_from_chunk(chunk: &str) -> Option<String> {
-  let header = chunk.lines().next()?;
-  let rest = header.strip_prefix("diff --git ")?;
-  let (_, path) = rest.rsplit_once(" b/")?;
+    let header = chunk.lines().next()?;
+    let rest = header.strip_prefix("diff --git ")?;
+    let (_, path) = rest.rsplit_once(" b/")?;
 
-  Some(path.to_string())
+    Some(path.to_string())
 }
 
 pub fn remove_junk_files(diff: &str) -> String {

@@ -1,0 +1,98 @@
+use serde::{Serialize, Deserialize};
+use crate::contracts::Finding;
+
+// what we send to openrouter
+#[derive(Serialize)]
+struct ChatRequest {
+  model: String,
+  temperature: f32,
+  messages: Vec<RequestMessage>
+}
+
+#[derive(Serialize)]
+struct RequestMessage {
+  role: String,
+  content: String,
+}
+
+
+// openrouter response
+#[derive(Deserialize)]
+struct ChatResponse {
+  choices: Vec<Choice>,
+  usage: Usage,
+}
+
+#[derive(Deserialize)]
+struct Choice {
+  message: ResponseMessage,
+}
+
+#[derive(Deserialize)]
+struct ResponseMessage {
+  content: String,
+}
+
+#[derive(Deserialize)]
+struct Usage {
+  prompt_tokens: u32,
+  completion_tokens: u32,
+}
+
+// what model wrote within Content (findings appaz)
+#[derive(Deserialize)]
+struct ReviewOutput {
+  findings: Vec<Finding>
+}
+
+pub fn review(diff: &str) -> Result<Vec<Finding>, Box<dyn std::error::Error>> {
+  
+  // retrieving env params
+  let api_key = std::env::var("OPENROUTER_API_KEY")?;
+  let model = std::env::var("OPENROUTER_MODEL")?;
+  let temperature: f32 = std::env::var("OPENROUTER_TEMPERATURE")?.parse()?;
+
+  // loading prompt from generalist.md 
+  let prompt = std::fs::read_to_string("prompts/generalist.md")?;
+
+  // build chat request
+  let request = ChatRequest {
+    model: model,
+    temperature: temperature,
+    messages: vec![
+      RequestMessage {
+        role: "system".to_string(),
+        content: prompt,
+      }, 
+      RequestMessage {
+        role: "user".to_string(),
+        content: diff.to_string(),
+      },
+    ],
+  };
+
+  // client p
+  let client = reqwest::blocking::Client::new();
+
+  let response: ChatResponse = client
+    .post("https://openrouter.ai/api/v1/chat/completions")
+    .bearer_auth(&api_key)
+    .json(&request)
+    .send()?
+    .error_for_status()?
+    .json()?;
+
+  // json conntent response
+  let content = response
+    .choices
+    .into_iter()
+    .next()
+    .ok_or("model returned no choices")?
+    .message
+    .content;
+
+  let output: ReviewOutput = serde_json::from_str(&content)?;
+
+  Ok(output.findings)
+  
+}

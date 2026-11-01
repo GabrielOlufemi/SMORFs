@@ -1,10 +1,14 @@
 mod contracts;
 mod intake;
+mod reviewer;
 mod junk;
 
+use dotenvy::dotenv;
 use contracts::{Category, Finding, Severity};
 
 fn main(){
+
+  dotenv().ok();
 
   // testing finding struct via serde package
   let finding = Finding {
@@ -28,4 +32,7 @@ fn main(){
   let clean = intake::remove_junk_files(&diff_output);
   println!("unchanged: {}", clean == diff_output);
 
+  let findings = reviewer::review(&clean).unwrap();
+  println!("{}", serde_json::to_string_pretty(&findings).unwrap());
+  
 }
