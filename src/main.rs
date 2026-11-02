@@ -1,6 +1,7 @@
 mod contracts;
 mod intake;
 mod reviewer;
+mod editor;
 mod junk;
 
 use dotenvy::dotenv;
@@ -33,6 +34,7 @@ fn main(){
   println!("unchanged: {}", clean == diff_output);
 
   let findings = reviewer::review(&clean).unwrap();
+  let findings = editor::filter_findings(&clean, findings);
   println!("{}", serde_json::to_string_pretty(&findings).unwrap());
   
 }

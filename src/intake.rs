@@ -4,7 +4,7 @@ pub fn diff_from_file(path: &str) -> Result<String, std::io::Error> {
     std::fs::read_to_string(path)
 }
 
-fn split_by_file(diff: &str) -> Vec<String> {
+pub fn split_by_file(diff: &str) -> Vec<String> {
     let mut chunks: Vec<String> = Vec::new();
     let mut current = String::new();
 
@@ -23,7 +23,7 @@ fn split_by_file(diff: &str) -> Vec<String> {
     chunks
 }
 
-fn extract_path_from_chunk(chunk: &str) -> Option<String> {
+pub fn extract_path_from_chunk(chunk: &str) -> Option<String> {
     let header = chunk.lines().next()?;
     let rest = header.strip_prefix("diff --git ")?;
     let (_, path) = rest.rsplit_once(" b/")?;
