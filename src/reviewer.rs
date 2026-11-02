@@ -39,13 +39,22 @@ struct Usage {
   completion_tokens: u32,
 }
 
+// to aid us storing details upon functon end
+pub struct ReviewResult {
+  pub findings: Vec<Finding>,
+  pub model: String,
+  pub temperature: f32,
+  pub prompt_tokens: u32,
+  pub completion_tokens: u32,
+}
+
 // what model wrote within Content (findings appaz)
 #[derive(Deserialize)]
 struct ReviewOutput {
   findings: Vec<Finding>
 }
 
-pub fn review(diff: &str) -> Result<Vec<Finding>, Box<dyn std::error::Error>> {
+pub fn review(diff: &str) -> Result<ReviewResult, Box<dyn std::error::Error>> {
   
   // retrieving env params
   let api_key = std::env::var("OPENROUTER_API_KEY")?;
@@ -57,7 +66,7 @@ pub fn review(diff: &str) -> Result<Vec<Finding>, Box<dyn std::error::Error>> {
 
   // build chat request
   let request = ChatRequest {
-    model: model,
+    model: model.clone(),
     temperature: temperature,
     messages: vec![
       RequestMessage {
@@ -93,6 +102,12 @@ pub fn review(diff: &str) -> Result<Vec<Finding>, Box<dyn std::error::Error>> {
 
   let output: ReviewOutput = serde_json::from_str(&content)?;
 
-  Ok(output.findings)
+  Ok(ReviewResult {
+    findings:  output.findings,
+    model: model,
+    temperature: temperature,
+    prompt_tokens: response.usage.prompt_tokens,
+    completion_tokens: response.usage.completion_tokens,
+  })
   
 }

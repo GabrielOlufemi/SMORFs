@@ -37,8 +37,12 @@ pub struct Run {
   pub schema_version: u32,
   pub id: String,
   pub model: String,
-  pub job: Job,
+  pub diff_path: String,
+  // pub job: Job,  -- i'll add back once ready for real branch review 
+  pub temperature: f32,
   pub prompt_version: String,
   pub findings: Vec<Finding>,
-  pub duration: u64
+  pub prompt_tokens: u32,
+  pub completion_tokens: u32,
+  pub duration_ms: u64
 }
