@@ -100,7 +100,7 @@ pub fn review(diff: &str) -> Result<ReviewResult, Box<dyn std::error::Error>> {
     .message
     .content;
 
-  let output: ReviewOutput = serde_json::from_str(&content)?;
+  let output: ReviewOutput = serde_json::from_str(&content).map_err(|e| format!("model reply wasn't valid JSON ({e}):\n{content}"))?;
 
   Ok(ReviewResult {
     findings:  output.findings,

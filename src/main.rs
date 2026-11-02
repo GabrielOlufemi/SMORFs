@@ -13,8 +13,11 @@ fn main(){
 
   dotenv().ok();
 
-  let diff_path = "evals/cases/retry-on-failure/diff.patch";
-  let diff_output = intake::diff_from_file(diff_path).unwrap();
+  let diff_path = std::env::args()
+    .nth(1)
+    .expect("usage: cargo run --<path/to/diff.patch>");
+  
+  let diff_output = intake::diff_from_file(&diff_path).unwrap();
 
   let clean = intake::remove_junk_files(&diff_output);
 
@@ -36,7 +39,7 @@ fn main(){
     id,
     model: result.model,
     temperature: result.temperature,
-    diff_path: diff_path.to_string(),
+    diff_path: diff_path,
     prompt_version: "generalist-v1".to_string(),
     findings,
     prompt_tokens: result.prompt_tokens,
