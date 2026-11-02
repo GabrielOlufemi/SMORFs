@@ -81,7 +81,9 @@ pub fn review(diff: &str) -> Result<ReviewResult, Box<dyn std::error::Error>> {
   };
 
   // client p
-  let client = reqwest::blocking::Client::new();
+  let client = reqwest::blocking::Client::builder()
+    .timeout(std::time::Duration::from_secs(120))
+    .build()?;
 
   let response: ChatResponse = client
     .post("https://openrouter.ai/api/v1/chat/completions")
@@ -100,7 +102,14 @@ pub fn review(diff: &str) -> Result<ReviewResult, Box<dyn std::error::Error>> {
     .message
     .content;
 
-  let output: ReviewOutput = serde_json::from_str(&content).map_err(|e| format!("model reply wasn't valid JSON ({e}):\n{content}"))?;
+  let json_text = content
+    .trim()
+    .trim_start_matches("```json")
+    .trim_start_matches("```")
+    .trim_end_matches("```")
+    .trim();
+
+  let output: ReviewOutput = serde_json::from_str(json_text).map_err(|e| format!("model reply wasn't valid JSON ({e}):\n{content}"))?;
 
   Ok(ReviewResult {
     findings:  output.findings,
