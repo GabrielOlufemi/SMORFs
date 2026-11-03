@@ -53,7 +53,7 @@ struct ReviewOutput {
   findings: Vec<Finding>
 }
 
-pub fn review(diff: &str, prompt_path: &str) -> Result<ReviewResult, Box<dyn std::error::Error>> {
+pub async fn review(diff: &str, prompt_path: &str) -> Result<ReviewResult, Box<dyn std::error::Error>> {
   
   // retrieving env params
   let api_key = std::env::var("OPENROUTER_API_KEY")?;
@@ -84,7 +84,7 @@ pub fn review(diff: &str, prompt_path: &str) -> Result<ReviewResult, Box<dyn std
   };
 
   // client p
-  let client = reqwest::blocking::Client::builder()
+  let client = reqwest::Client::builder()
     .timeout(std::time::Duration::from_secs(120))
     .build()?;
 
@@ -92,9 +92,9 @@ pub fn review(diff: &str, prompt_path: &str) -> Result<ReviewResult, Box<dyn std
     .post("https://openrouter.ai/api/v1/chat/completions")
     .bearer_auth(&api_key)
     .json(&request)
-    .send()?
+    .send().await?
     .error_for_status()?
-    .json()?;
+    .json().await?;
 
   // json conntent response
   let content = response
