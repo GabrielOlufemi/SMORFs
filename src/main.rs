@@ -22,7 +22,7 @@ fn main(){
   let clean = intake::remove_junk_files(&diff_output);
 
   let started = std::time::Instant::now();
-  let result = reviewer::review(&clean).unwrap();
+  let result = reviewer::review(&clean, "prompts/tests.md").unwrap();
   let findings = editor::filter_findings(&clean, result.findings);
 
   let duration_ms = started.elapsed().as_millis() as u64;
