@@ -13,7 +13,7 @@ Report problems in the **added or changed lines** only:
 - **Bad error handling**: errors silently ignored, `unwrap()` on values that can realistically fail, a fallback that hides a real failure.
 - **Broken contracts**: the code no longer does what its name, comment or caller expects.
 
-Before reporting, work through the code with one concrete input and check the result is actually wrong.
+Only trace code you already suspect. When something looks wrong, check it with one concrete input before reporting it. Don't simulate code that looks fine.
 
 # Do not report
 

@@ -48,7 +48,10 @@ def score_case(run_path, expected_path):
     if any(matches(f, bug) for bug in bugs):
       findings_hit += 1
 
-  return len(bugs), bugs_found, len(findings), findings_hit
+  # smorfs that didn't finish: outcome is {"Failure": "..."} instead of "Success"
+  failed = [t["reviewer"] for t in run.get("tasks", []) if t["outcome"] != "Success"]
+
+  return len(bugs), bugs_found, len(findings), findings_hit, failed
   
   
       
@@ -56,7 +59,7 @@ def score_case(run_path, expected_path):
 def main():
   subprocess.run(["cargo", "build"], check=True)
 
-  total_bugs = total_found = total_findings = total_hit = errors = 0
+  total_bugs = total_found = total_findings = total_hit = errors = failed_smorfs = 0
 
   print(f"{'case':<20} {'bugs found':>10} {'findings hit':>13}")
 
@@ -68,9 +71,12 @@ def main():
       errors += 1
       continue
 
-    bugs, found, findings, hit = score_case(run_path, case_dir / "expected.json")
+    bugs, found, findings, hit, failed = score_case(run_path, case_dir / "expected.json")
 
-    print(f"{case_dir.name:<20} {found:>4} / {bugs:<4} {hit:>6} / {findings:<4}")
+    note = f"  failed: {', '.join(failed)}" if failed else ""
+    print(f"{case_dir.name:<20} {found:>4} / {bugs:<4} {hit:>6} / {findings:<4}{note}")
+
+    failed_smorfs += len(failed)
 
     total_bugs += bugs
     total_found += found
@@ -84,6 +90,7 @@ def main():
   print(f"recall:    {total_found}/{total_bugs} = {recall:.0%}")
   print(f"precision: {total_hit}/{total_findings} = {precision:.0%}")
   print(f"errors:    {errors}")
+  print(f"failed smorfs: {failed_smorfs}")
 if __name__ == "__main__":
   main()
 
