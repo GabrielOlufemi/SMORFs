@@ -24,7 +24,7 @@ If the diff does change test code for that logic, judge the quality of those tes
 - code the diff did not change
 - coverage for its own sake: only report a missing test when a real behaviour could break unnoticed
 
-Report **at most one finding per untested function**.
+Report **at most one finding per untested function**. Report the untested function itself, not the functions that call it: if a new helper is untested, don't also report its caller as untested because it now uses the helper.
 
 If the change has no real test problems, return an empty list. An empty list is a good answer.
 

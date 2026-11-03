@@ -1,3 +1,5 @@
+use std::fmt::format;
+
 use serde::{Serialize, Deserialize};
 use crate::contracts::Finding;
 
@@ -54,15 +56,19 @@ struct ReviewOutput {
   findings: Vec<Finding>
 }
 
-pub fn review(diff: &str) -> Result<ReviewResult, Box<dyn std::error::Error>> {
+pub fn review(diff: &str, prompt_path: &str) -> Result<ReviewResult, Box<dyn std::error::Error>> {
   
   // retrieving env params
   let api_key = std::env::var("OPENROUTER_API_KEY")?;
   let model = std::env::var("OPENROUTER_MODEL")?;
   let temperature: f32 = std::env::var("OPENROUTER_TEMPERATURE")?.parse()?;
 
-  // loading prompt from generalist.md 
-  let prompt = std::fs::read_to_string("prompts/generalist.md")?;
+  // // loading prompt from generalist.md 
+  // let prompt = std::fs::read_to_string("prompts/generalist.md")?;
+
+  // loading from prompt_path
+  let prompt = std::fs::read_to_string(prompt_path)
+    .map_err(|e| format!("couldn't read prompt {prompt_path} ({e})"))?;
 
   // build chat request
   let request = ChatRequest {
