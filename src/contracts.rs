@@ -2,6 +2,8 @@ use serde::{Serialize, Deserialize};
 
 #[derive(Serialize, Deserialize)]
 pub struct Finding {
+  #[serde(default)] // so manager wil be able to prefill reviewer field 
+  pub reviewer: String,
   pub severity: Severity,
   pub category: Category,
   pub file : String,
@@ -40,9 +42,33 @@ pub struct Run {
   pub diff_path: String,
   // pub job: Job,  -- i'll add back once ready for real branch review 
   pub temperature: f32,
-  pub prompt_version: String,
+  pub tasks: Vec<TaskRecord>, //basically log of agents that ran
   pub findings: Vec<Finding>,
+  pub total_prompt_tokens: u32,
+  pub total_completion_tokens: u32,
+  pub duration_ms: u64
+}
+
+// task related p - uncertain
+pub struct Task {
+  pub reviewer: String,
+  pub prompt_path: String,
+}
+
+// how a task ended - spawned agent review
+#[derive(Serialize, Deserialize)]
+pub enum Outcome {
+  Success,
+  Failure(String),
+}
+
+// details of a task
+#[derive(Serialize, Deserialize)]
+pub struct TaskRecord { 
+  pub reviewer: String,
+  pub prompt_path: String,
+  pub outcome: Outcome,
   pub prompt_tokens: u32,
   pub completion_tokens: u32,
-  pub duration_ms: u64
+  pub duration_ms: u64,
 }

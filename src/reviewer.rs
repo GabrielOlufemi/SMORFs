@@ -1,4 +1,3 @@
-use std::fmt::format;
 
 use serde::{Serialize, Deserialize};
 use crate::contracts::Finding;
@@ -44,8 +43,6 @@ struct Usage {
 // to aid us storing details upon functon end
 pub struct ReviewResult {
   pub findings: Vec<Finding>,
-  pub model: String,
-  pub temperature: f32,
   pub prompt_tokens: u32,
   pub completion_tokens: u32,
 }
@@ -119,8 +116,6 @@ pub fn review(diff: &str, prompt_path: &str) -> Result<ReviewResult, Box<dyn std
 
   Ok(ReviewResult {
     findings:  output.findings,
-    model: model,
-    temperature: temperature,
     prompt_tokens: response.usage.prompt_tokens,
     completion_tokens: response.usage.completion_tokens,
   })
