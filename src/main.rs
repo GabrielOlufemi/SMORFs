@@ -12,7 +12,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::contracts::Task;
 
-fn main(){
+#[tokio::main]
+async fn main(){
 
   dotenv().ok();
 
@@ -62,7 +63,7 @@ fn main(){
 
   let started = std::time::Instant::now();
 
-  let manager_result = manager::run_tasks(&clean, &tasks);
+  let manager_result = manager::run_tasks(&clean, &tasks).await;
 
   // totals
   let total_prompt_tokens: u32 = manager_result.tasks

@@ -1,5 +1,5 @@
 // technically papa smorf - the orchestrator i suppose
-
+use futures::future::join_all;
 use crate::contracts::{Finding, Task, TaskRecord,Outcome};
 use crate::reviewer;
 
@@ -9,17 +9,25 @@ pub struct ManagerResult {
 }
 
 
-pub fn run_tasks(diff: &str, tasks: &[Task]) -> ManagerResult{
+pub async fn run_tasks(diff: &str, tasks: &[Task]) -> ManagerResult{
   let mut findings = Vec::new();
   let mut records = Vec::new();
 
-  for task in tasks {
-
+  // phase 1
+  let futures = tasks.iter().map(|task| async move{
     // timing our task
     let start = std::time::Instant::now();
-    let task_outcome = reviewer::review(diff, &task.prompt_path);
+    let task_outcome = reviewer::review(diff, &task.prompt_path).await;
     let duration_ms = start.elapsed().as_millis() as u64;
 
+    (task_outcome, duration_ms)
+  });
+
+  // phase 2
+  let results = join_all(futures).await;
+
+  // phase 3 
+  for (task, (task_outcome,duration_ms)) in tasks.iter().zip(results) {
     // match cuz result gives us either ok or err
     match task_outcome{
       Ok(mut result) => {
