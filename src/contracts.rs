@@ -11,7 +11,8 @@ pub struct Finding {
   pub message: String, 
 }
 
-#[derive(Serialize, Deserialize)]
+// derived order follows declaration order: High < Medium < Low, so the most severe sorts first
+#[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 pub enum Severity {
   High,
   Medium,
