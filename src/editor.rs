@@ -63,6 +63,55 @@ fn parse_new_range(header: &str) -> Option<(u32, u32)> {
   Some((start, count))
 }
 
+// how far apart two findings' lines can be and still count as the same spot
+const SAME_SPOT_LINES: u32 = 3;
+
+pub fn merge_duplicates(findings: Vec<Finding>) -> Vec<Finding> {
+  // each group holds findings that point at the same spot
+  let mut groups: Vec<Vec<Finding>> = Vec::new();
+
+  for finding in findings {
+    // find a group with any finding at the same spot as this one
+    let existing = groups
+      .iter_mut()
+      .find(|group| group.iter().any(|kept| same_spot(kept, &finding)));
+
+    match existing {
+      Some(group) => group.push(finding),
+      None => groups.push(vec![finding]),
+    }
+  }
+
+  groups.into_iter().map(combine).collect()
+}
+
+fn same_spot(a: &Finding, b: &Finding) -> bool {
+  a.file == b.file && a.line.abs_diff(b.line) <= SAME_SPOT_LINES
+}
+
+// turns a group into one finding: the most severe one leads, everyone's name and message is kept
+fn combine(mut group: Vec<Finding>) -> Finding {
+  if group.len() == 1 {
+    return group.remove(0);
+  }
+
+  // High < Medium < Low, so the most severe comes first. ties keep task order
+  group.sort_by_key(|f| f.severity);
+
+  let reviewers: Vec<String> = group.iter().map(|f| f.reviewer.clone()).collect();
+  let messages: Vec<String> = group
+    .iter()
+    .map(|f| format!("[{}] {}", f.reviewer, f.message))
+    .collect();
+
+  println!("merged: {}:{} ({})", group[0].file, group[0].line, reviewers.join(", "));
+
+  let mut winner = group.remove(0);
+  winner.reviewer = reviewers.join(", ");
+  winner.message = messages.join("\n");
+  winner
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;

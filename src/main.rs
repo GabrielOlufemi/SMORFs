@@ -80,6 +80,7 @@ async fn main(){
 
 
   let findings = editor::filter_findings(&clean, manager_result.findings);
+  let findings = editor::merge_duplicates(findings);
 
   let duration_ms = started.elapsed().as_millis() as u64;
 
