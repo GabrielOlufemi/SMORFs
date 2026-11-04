@@ -10,7 +10,7 @@ use contracts::Run;
 use dotenvy::dotenv;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::contracts::Task;
+use crate::contracts::{Task, Job};
 
 #[tokio::main]
 async fn main(){
@@ -20,12 +20,39 @@ async fn main(){
 	let model = std::env::var("OPENROUTER_MODEL").unwrap();
 	let temperature: f32 = std::env::var("OPENROUTER_TEMPERATURE").unwrap().parse().unwrap();
 
-  let diff_path = std::env::args()
-    .nth(1)
-    .expect("usage: cargo run --<path/to/diff.patch>");
 
-  let diff_output = intake::diff_from_file(&diff_path).unwrap();
+  let args: Vec<String> = std::env::args().collect();
 
+  let (diff_output, diff_label) = match args.len() {
+    2 => {
+      let diff = intake::diff_from_file(&args[1]).unwrap();
+
+      // args = [
+      //   "target/debug/smorfs",     // args[0]: always there, the program itself
+      //   "evals/cases/p95-latency/diff.patch",      // args[1]: the 1 word we typed
+      // ]
+      
+      (diff, args[1].clone())
+    },
+    3 | 4 => {
+        let job = Job {
+          repo_path: args[1].clone(), 
+          source_branch: args[2].clone(),
+          target_branch: args.get(3).cloned().unwrap_or("main".to_string()), 
+        };
+
+        let diff = intake::diff_from_branch(&job).unwrap();
+        let label = format!("{} {}...{}", job.repo_path, job.target_branch, job.source_branch);
+
+      (diff, label)
+    }
+
+    _ => {
+      eprintln!("usage:\n  cargo run -- <path/to/diff.patch>\n  cargo run -- <repo path> <branch> [target branch]");
+      std::process::exit(1);
+    }
+  };
+   
   let clean = intake::remove_junk_files(&diff_output);
 
   // the 5 smorfs
@@ -96,7 +123,7 @@ async fn main(){
     id,
     model,
     temperature,
-    diff_path,
+    diff_path: diff_label,
     tasks: manager_result.tasks,
     findings,
     total_prompt_tokens,

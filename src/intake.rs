@@ -1,4 +1,24 @@
 use crate::junk::is_junk;
+use std::process::Command;
+use crate::contracts::Job;
+
+pub fn diff_from_branch(job: &Job) -> Result<String, Box<dyn std::error::Error>> {
+
+    let cmd_string = format!("{}...{}", job.target_branch, job.source_branch);
+
+    let output = Command::new("git")
+        .args(["-C", job.repo_path.as_str(), "diff", cmd_string.as_str()])
+        .output()?;
+
+    if !output.status.success() {
+        let message = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("git diff failed: {}", message.trim()).into());
+    }
+
+    let diff = String::from_utf8(output.stdout)?;
+    Ok(diff)
+ 
+}
 
 pub fn diff_from_file(path: &str) -> Result<String, std::io::Error> {
     std::fs::read_to_string(path)
