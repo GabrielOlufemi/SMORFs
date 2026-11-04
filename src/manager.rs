@@ -3,6 +3,8 @@ use futures::future::join_all;
 use crate::contracts::{Finding, Task, TaskRecord,Outcome};
 use crate::reviewer;
 
+const MAX_ATTEMPTS: u32 = 2;
+
 pub struct ManagerResult {
   pub findings: Vec<Finding>,
   pub tasks: Vec<TaskRecord>,
@@ -17,9 +19,25 @@ pub async fn run_tasks(diff: &str, tasks: &[Task]) -> ManagerResult{
   let futures = tasks.iter().map(|task| async move{
     // timing our task
     let start = std::time::Instant::now();
-    let task_outcome = reviewer::review(diff, &task.prompt_path).await;
-    let duration_ms = start.elapsed().as_millis() as u64;
+    let mut attempt = 1;
+    
+    let task_outcome = loop {
+      let outcome = reviewer::review(diff, &task.prompt_path).await;
+      
+      if outcome.is_ok() || attempt == MAX_ATTEMPTS {
+        break outcome;
+      }
 
+      if let Err(e) = &outcome {
+        eprintln!("{} failed (attempt {}), retrying: {}", task.reviewer, attempt, e);
+      }
+      
+      attempt += 1;        
+    };
+
+
+    
+    let duration_ms = start.elapsed().as_millis() as u64;
     (task_outcome, duration_ms)
   });
 
