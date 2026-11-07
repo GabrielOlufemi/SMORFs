@@ -15,125 +15,127 @@ use crate::contracts::{Task, Job};
 #[tokio::main]
 async fn main(){
 
-  dotenv().ok();
+	dotenv().ok();
 
 	let model = std::env::var("OPENROUTER_MODEL").unwrap();
 	let temperature: f32 = std::env::var("OPENROUTER_TEMPERATURE").unwrap().parse().unwrap();
 
 
-  let args: Vec<String> = std::env::args().collect();
+	let args: Vec<String> = std::env::args().collect();
 
-  let (diff_output, diff_label) = match args.len() {
-    2 => {
-      let diff = intake::diff_from_file(&args[1]).unwrap();
+	let (diff_output, diff_label) = match args.len() {
+		2 => {
+			let diff = intake::diff_from_file(&args[1]).unwrap();
 
-      // args = [
-      //   "target/debug/smorfs",     // args[0]: always there, the program itself
-      //   "evals/cases/p95-latency/diff.patch",      // args[1]: the 1 word we typed
-      // ]
-      
-      (diff, args[1].clone())
-    },
-    3 | 4 => {
-        let job = Job {
-          repo_path: args[1].clone(), 
-          source_branch: args[2].clone(),
-          target_branch: args.get(3).cloned().unwrap_or("main".to_string()), 
-        };
+			// args = [
+			//   "target/debug/smorfs",     // args[0]: always there, the program itself
+			//   "evals/cases/p95-latency/diff.patch",      // args[1]: the 1 word we typed
+			// ]
 
-        let diff = intake::diff_from_branch(&job).unwrap();
-        let label = format!("{} {}...{}", job.repo_path, job.target_branch, job.source_branch);
+			(diff, args[1].clone())
+		},
+		3 | 4 => {
+				let job = Job {
+					repo_path: args[1].clone(), 
+					source_branch: args[2].clone(),
+					target_branch: args.get(3).cloned().unwrap_or("main".to_string()), 
+				};
 
-      (diff, label)
-    }
+				let diff = intake::diff_from_branch(&job).unwrap();
+				let label = format!("{} {}...{}", job.repo_path, job.target_branch, job.source_branch);
 
-    _ => {
-      eprintln!("usage:\n  cargo run -- <path/to/diff.patch>\n  cargo run -- <repo path> <branch> [target branch]");
-      std::process::exit(1);
-    }
-  };
-   
-  let clean = intake::remove_junk_files(&diff_output);
+			(diff, label)
+		}
 
-  // the 5 smorfs
-  let tasks = vec![
-    Task {
-      // grouchy smorf
-      reviewer: "tests".to_string(),
-      prompt_path: "prompts/tests.md".to_string(),
-    },
+		_ => {
+			eprintln!("usage:\n  cargo run -- <path/to/diff.patch>\n  cargo run -- <repo path> <branch> [target branch]");
+			std::process::exit(1);
+		}
+	};
 
-    Task {
-      // brainy smorf
-      reviewer: "correctness".to_string(),
-      prompt_path: "prompts/correctness.md".to_string(),
-    },
+	let clean = intake::remove_junk_files(&diff_output);
 
-    Task {
-      // hefty smorf
-      reviewer: "performance".to_string(),
-      prompt_path: "prompts/performance.md".to_string(),
-    },
+	// the 5 smorfs
+	let tasks = vec![
+		Task {
+			// grouchy smorf
+			reviewer: "tests".to_string(),
+			prompt_path: "prompts/tests.md".to_string(),
+		},
 
-    Task {
-      // hadny smorf
-      reviewer: "security".to_string(),
-      prompt_path: "prompts/security.md".to_string(),
-    },
+		Task {
+			// brainy smorf
+			reviewer: "correctness".to_string(),
+			prompt_path: "prompts/correctness.md".to_string(),
+		},
 
-    Task {
-      // vanity smorf
-      reviewer: "style".to_string(),
-      prompt_path: "prompts/style.md".to_string(),
-    },
-  ];
+		Task {
+			// hefty smorf
+			reviewer: "performance".to_string(),
+			prompt_path: "prompts/performance.md".to_string(),
+		},
 
-  let started = std::time::Instant::now();
+		Task {
+			// hadny smorf
+			reviewer: "security".to_string(),
+			prompt_path: "prompts/security.md".to_string(),
+		},
 
-  let manager_result = manager::run_tasks(&clean, &tasks).await;
+		Task {
+			// vanity smorf
+			reviewer: "style".to_string(),
+			prompt_path: "prompts/style.md".to_string(),
+		},
+	];
 
-  // totals
-  let total_prompt_tokens: u32 = manager_result.tasks
-    .iter()
-    .map(|t| t.prompt_tokens)
-    .sum();
+	let started = std::time::Instant::now();
 
-  let total_completion_tokens: u32 = manager_result.tasks
-    .iter()
-    .map(|c| c.completion_tokens)
-    .sum();
+	let manager_result = manager::run_tasks(&clean, &tasks).await;
 
-  // building our run
+	// totals
+	let total_prompt_tokens: u32 = manager_result.tasks
+		.iter()
+		.map(|t| t.prompt_tokens)
+		.sum();
+
+	let total_completion_tokens: u32 = manager_result.tasks
+		.iter()
+		.map(|c| c.completion_tokens)
+		.sum();
 
 
-  let findings = editor::filter_findings(&clean, manager_result.findings);
-  let findings = editor::merge_duplicates(findings);
 
-  let duration_ms = started.elapsed().as_millis() as u64;
+	let findings = editor::filter_findings(&clean, manager_result.findings);
+	let findings = editor::merge_duplicates(findings);
 
-  let id = SystemTime::now()
-    .duration_since(UNIX_EPOCH)
-    .unwrap()
-    .as_millis()
-    .to_string();
+	// ranking according to severity
+	let findings = editor::rank_by_severity(findings);
+
+	let duration_ms = started.elapsed().as_millis() as u64;
+
+	let id = SystemTime::now()
+		.duration_since(UNIX_EPOCH)
+		.unwrap()
+		.as_millis()
+		.to_string();
 
 
-  let run = Run {
-    schema_version: 2,
-    id,
-    model,
-    temperature,
-    diff_path: diff_label,
-    tasks: manager_result.tasks,
-    findings,
-    total_prompt_tokens,
-    total_completion_tokens,
-    duration_ms,
-  };
+	let run = Run {
+		schema_version: 2,
+		id,
+		model,
+		temperature,
+		diff_path: diff_label,
+		tasks: manager_result.tasks,
+		findings,
+		total_prompt_tokens,
+		total_completion_tokens,
+		duration_ms,
+	};
 
-  let path = store::save_run(&run).unwrap();
-  println!("saved {}", path);
+	let path = store::save_run(&run).unwrap();
+	println!("saved {}", path);
 
-  // println!("{}", serde_json::to_string_pretty(&run.findings).unwrap());
+	// println!("{}", serde_json::to_string_pretty(&run.findings).unwrap());
 
 }
