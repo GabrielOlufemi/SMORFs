@@ -41,7 +41,7 @@ pub struct Run {
   pub id: String,
   pub model: String,
   pub diff_path: String,
-  // pub job: Job,  -- i'll add back once ready for real branch review 
+  // pub job: Job, i'll add back once ready for real branch review 
   pub temperature: f32,
   pub tasks: Vec<TaskRecord>, //basically log of agents that ran
   pub findings: Vec<Finding>,
