@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use crate::intake::{split_by_file, extract_path_from_chunk};
 use crate::contracts::Finding;
 
+
 pub fn filter_findings(diff: &str, findings: Vec<Finding>) -> Vec<Finding> {
   let map = valid_lines(&diff);
 
@@ -84,6 +85,16 @@ pub fn merge_duplicates(findings: Vec<Finding>) -> Vec<Finding> {
 
   groups.into_iter().map(combine).collect()
 }
+
+
+pub fn rank_by_severity(mut findings: Vec<Finding>) -> Vec<Finding>{
+
+  findings.sort_by_key(|f| f.severity);
+
+  findings
+}
+
+
 
 fn same_spot(a: &Finding, b: &Finding) -> bool {
   a.file == b.file && a.line.abs_diff(b.line) <= SAME_SPOT_LINES
