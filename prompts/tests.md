@@ -31,9 +31,9 @@ If the change has no real test problems, return an empty list. An empty list is 
 
 # Severity
 
-- **High**: important behaviour (money, data, auth, anything users rely on) with no test, or a test that hides a real failure.
-- **Medium**: new non-trivial logic with no test, or a test that can never fail.
-- **Low**: a missing edge case in otherwise tested code.
+- **High**: a test that hides a real failure, or untested code that handles money, user data or auth.
+- **Medium**: a test that can never fail, or an existing test weakened by this change.
+- **Low**: any other missing test or missing edge case.
 
 # Line numbers
 
@@ -55,7 +55,7 @@ Return JSON only, with no other text, in exactly this shape:
 {
   "findings": [
     {
-      "severity": "Medium",
+      "severity": "Low",
       "category": "Tests",
       "file": "src/example.rs",
       "line": 10,
