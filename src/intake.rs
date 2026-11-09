@@ -1,6 +1,55 @@
 use crate::junk::is_junk;
 use std::process::Command;
-use crate::contracts::Job;
+use crate::contracts::{Job, PullRequest};
+
+pub fn parse_pr_url(url: &str) -> Option<PullRequest> {
+
+    let path = url.strip_prefix("https://github.com/")?;
+
+    let pieces: Vec<&str> = path.split('/').collect(); 
+
+    if pieces.len() < 4 || pieces[2] != "pull" {
+        return None
+    }
+
+    let number: u32 = pieces[3].parse().ok()?;
+    
+    let result = PullRequest {
+        owner: pieces[0].to_string(),
+        repo: pieces[1].to_string(),
+        number,
+    };
+        
+    return Some(result)
+    
+}
+
+
+pub async fn diff_from_pr(pr: &PullRequest) -> Result<String, Box <dyn std::error::Error>> {
+
+    let access_token = std::env::var("GITHUB_ACCESS_TOKEN")?;
+
+    let url = format!(
+        "https://api.github.com/repos/{}/{}/pulls/{}",
+        pr.owner,
+        pr.repo,
+        pr.number
+    );
+
+    let client = reqwest::Client::new();
+
+    let diff = client
+        .get(&url)
+        .bearer_auth(&access_token)
+        .header("Accept", "application/vnd.github.diff")
+        .header("User-Agent", "smorfs")
+        .send().await?
+        .error_for_status()?
+        .text().await?;
+
+    Ok(diff)
+
+}
 
 pub fn diff_from_branch(job: &Job) -> Result<String, Box<dyn std::error::Error>> {
 

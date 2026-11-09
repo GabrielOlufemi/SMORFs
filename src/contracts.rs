@@ -12,7 +12,7 @@ pub struct Finding {
 }
 
 // derived order follows declaration order: High < Medium < Low, so the most severe sorts first
-#[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug)]
 pub enum Severity {
   High,
   Medium,
@@ -33,6 +33,14 @@ pub struct Job {
   pub repo_path: String,
   pub source_branch: String,  //branch we intend to merge 
   pub target_branch: String,  //branch receiving the changes
+}
+
+// cuz of this structure 
+// a pull request on github: https://github.com/<owner>/<repo>/pull/<number>
+pub struct PullRequest {
+  pub owner: String,
+  pub repo: String,
+  pub number: u32
 }
 
 #[derive(Serialize, Deserialize)]
